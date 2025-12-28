@@ -17,34 +17,23 @@ BASE_DIR = "checked"
 FOLDER_RU = os.path.join(BASE_DIR, "RU_Best")
 FOLDER_EURO = os.path.join(BASE_DIR, "My_Euro")
 
-if os.path.exists(BASE_DIR):
-    # Очистка папок, но оставляем структуру
-    pass 
-else:
-    os.makedirs(BASE_DIR)
-
-# Полная очистка перед стартом, чтобы старые части не мешали
+# Чистим старое, создаем новое
 if os.path.exists(FOLDER_RU): shutil.rmtree(FOLDER_RU)
 if os.path.exists(FOLDER_EURO): shutil.rmtree(FOLDER_EURO)
-
 os.makedirs(FOLDER_RU, exist_ok=True)
 os.makedirs(FOLDER_EURO, exist_ok=True)
 
-# Увеличил тайм-аут до 5 сек (Россия иногда тупит)
 TIMEOUT = 5 
 socket.setdefaulttimeout(TIMEOUT)
-
 THREADS = 40 
 CACHE_HOURS = 12
 CHUNK_LIMIT = 1000  # Разбивка по 1000 ключей
-
-# УВЕЛИЧИЛ ЛИМИТ ПРОВЕРКИ
 MAX_KEYS_TO_CHECK = 15000 
 
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
 MY_CHANNEL = "@vlesstrojan" 
 
-# Твои ссылки RU
+# === ТВОИ ССЫЛКИ ===
 URLS_RU = [
     "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
     "https://raw.githubusercontent.com/LowiKLive/BypassWhitelistRu/refs/heads/main/WhiteList-Bypass_Ru.txt",
@@ -55,7 +44,6 @@ URLS_RU = [
     "https://s3c3.001.gpucloud.ru/vahe4xkwi/cjdr"
 ]
 
-# Твои ссылки MY
 URLS_MY = [
     "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/githubmirror/new/all_new.txt"
 ]
@@ -165,49 +153,51 @@ def extract_ping(key_str):
         return int(ping_part)
     except: return None
 
-# === ОБНОВЛЕННАЯ ФУНКЦИЯ SAVE_CHUNKED ===
-# Теперь она возвращает список созданных имен файлов
+# === ИСПРАВЛЕННАЯ ФУНКЦИЯ (BASE64 + ВОЗВРАТ ИМЕН ФАЙЛОВ) ===
 def save_chunked(keys_list, folder, base_name):
     created_files = []
     
-    # Если список пуст, создаем пустой файл
-    if not keys_list:
+    # Убираем пустые
+    valid_keys = [k.strip() for k in keys_list if k and k.strip()]
+
+    # Если пусто, создаем пустой файл (чтобы не было 404)
+    if not valid_keys:
         fname = f"{base_name}.txt"
-        with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
+        path = os.path.join(folder, fname)
+        with open(path, "w", encoding="utf-8") as f:
             f.write("")
         created_files.append(fname)
         return created_files
 
-    # Разбиваем на части
-    chunks = [keys_list[i:i + CHUNK_LIMIT] for i in range(0, len(keys_list), CHUNK_LIMIT)]
+    chunks = [valid_keys[i:i + CHUNK_LIMIT] for i in range(0, len(valid_keys), CHUNK_LIMIT)]
     
     for i, chunk in enumerate(chunks, 1):
+        # Если часть одна - имя без цифры. Если много - с цифрой.
         if len(chunks) == 1:
-            # Если часть всего одна, не добавляем цифру (чтобы ссылка осталась красивой)
             fname = f"{base_name}.txt"
         else:
-            # Если частей много, именуем как base_part1.txt, base_part2.txt
             fname = f"{base_name}_part{i}.txt"
             
+        # КОДИРУЕМ В BASE64 (Hiddify полюбит это)
+        raw_content = "\n".join(chunk)
+        b64_content = base64.b64encode(raw_content.encode('utf-8')).decode('utf-8')
+        
         with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
-            f.write("\n".join(chunk))
+            f.write(b64_content)
+            
         created_files.append(fname)
         
     return created_files
 
 if __name__ == "__main__":
-    print(f"=== CHECKER v9.1 (Dynamic Links Fix) ===")
+    print(f"=== CHECKER v9.5 (BASE64 + DYNAMIC LINKS) ===")
     
     history = load_json(HISTORY_FILE)
     tasks = fetch_keys(URLS_RU, "RU") + fetch_keys(URLS_MY, "MY")
     
     unique_tasks = {k: tag for k, tag in tasks}.items()
-    total_raw = len(unique_tasks)
-    print(f"Загружено всего: {total_raw}")
-    
     all_items = list(unique_tasks)
     if len(all_items) > MAX_KEYS_TO_CHECK:
-        print(f"⚠️ Ограничиваем проверку до {MAX_KEYS_TO_CHECK} ключей.")
         all_items = all_items[:MAX_KEYS_TO_CHECK]
     
     current_time = time.time()
@@ -230,76 +220,55 @@ if __name__ == "__main__":
         else:
             to_check.append((k, tag))
 
-    print(f"На проверку: {len(to_check)}")
-
     if to_check:
         with ThreadPoolExecutor(max_workers=THREADS) as executor:
             future_to_item = {executor.submit(check_single_key, item): item for item in to_check}
             for i, future in enumerate(future_to_item):
                 key, tag = future_to_item[future]
                 res = future.result()
-                
                 if not res or res[0] is None: continue
-                    
                 latency, tag, country = res
                 k_id = key.split("#")[0]
                 history[k_id] = {'alive': True, 'latency': latency, 'time': current_time, 'country': country}
-                
                 label = f"{latency}ms_{country}_{MY_CHANNEL}"
                 final = f"{k_id}#{label}"
                 
                 if tag == "RU": res_ru.append(final)
                 elif tag == "MY":
                     if country in EURO_CODES: res_euro.append(final)
-                
-                if i % 100 == 0: print(f"Checked {i}...")
 
     save_json(HISTORY_FILE, {k:v for k,v in history.items() if current_time - v['time'] < 259200})
     
-    # Сортировка
     res_ru_clean = [k for k in res_ru if extract_ping(k) is not None]
     res_euro_clean = [k for k in res_euro if extract_ping(k) is not None]
-
     res_ru_clean.sort(key=extract_ping)
     res_euro_clean.sort(key=extract_ping)
-    
-    print(f"RU Valid: {len(res_ru_clean)}")
-    print(f"Euro Valid: {len(res_euro_clean)}")
 
-    # === СОХРАНЕНИЕ И ГЕНЕРАЦИЯ ССЫЛОК ===
-    
-    # Сохраняем и получаем имена файлов
+    # === СОХРАНЯЕМ И ПОЛУЧАЕМ ИМЕНА ФАЙЛОВ ===
+    # Функция теперь вернет список, например: ['ru_white_part1.txt', 'ru_white_part2.txt']
     ru_files = save_chunked(res_ru_clean, FOLDER_RU, "ru_white")
     euro_files = save_chunked(res_euro_clean, FOLDER_EURO, "my_euro")
 
+    # === ГЕНЕРАЦИЯ СПИСКА ССЫЛОК ===
+    # Обязательно замени kort0881 на свой ник, если делал форк!
     GITHUB_USER_REPO = "kort0881/vpn-checker-backend"
     BRANCH = "main"
     BASE_URL_RU = f"https://raw.githubusercontent.com/{GITHUB_USER_REPO}/{BRANCH}/{BASE_DIR}/RU_Best"
     BASE_URL_EURO = f"https://raw.githubusercontent.com/{GITHUB_USER_REPO}/{BRANCH}/{BASE_DIR}/My_Euro"
     
-    # Формируем список ссылок (Subscription List)
-    subs_lines = ["=== 🇷🇺 RUSSIA WHITELISTS ==="]
-    
-    # Динамически добавляем ссылки RU
-    for i, fname in enumerate(ru_files, 1):
-        link = f"{BASE_URL_RU}/{fname}"
-        # Можно добавить пояснение (Part 1, Part 2), если файлов > 1
-        label = f" (Part {i})" if len(ru_files) > 1 else ""
-        subs_lines.append(f"{link} | RU Best{label}")
-
-    subs_lines.append("\n=== 🇪🇺 MY EUROPE ===")
-    
-    # Динамически добавляем ссылки EURO
-    for i, fname in enumerate(euro_files, 1):
-        link = f"{BASE_URL_EURO}/{fname}"
-        label = f" (Part {i})" if len(euro_files) > 1 else ""
-        subs_lines.append(f"{link} | Euro{label}")
+    subs_lines = ["=== 🇷🇺 RUSSIA (BASE64) ==="]
+    for f in ru_files:
+        subs_lines.append(f"{BASE_URL_RU}/{f} | Russia Best")
+        
+    subs_lines.append("\n=== 🇪🇺 EUROPE (BASE64) ===")
+    for f in euro_files:
+        subs_lines.append(f"{BASE_URL_EURO}/{f} | Europe Best")
 
     with open(os.path.join(BASE_DIR, "subscriptions_list.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(subs_lines))
 
-    print(f"Ссылки сформированы: RU={len(ru_files)}, EURO={len(euro_files)}")
-    print("=== DONE SUCCESS ===")
+    print("=== SUCCESS: LISTS GENERATED ===")
+
 
 
 
