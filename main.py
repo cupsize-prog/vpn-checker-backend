@@ -33,7 +33,15 @@ MAX_KEYS_TO_CHECK = 15000
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
 MY_CHANNEL = "@vlesstrojan" 
 
+# Обновленный список URL без дублей
 URLS_RU = [
+    "https://github.com/igareck/vpn-configs-for-russia/blob/main/BLACK_VLESS_RUS_mobile.txt",
+    "https://github.com/igareck/vpn-configs-for-russia/blob/main/BLACK_SS%2BAll_RUS.txt",
+    "https://github.com/igareck/vpn-configs-for-russia/blob/main/Vless-Reality-White-Lists-Rus-Mobile-2.txt",
+    "https://github.com/igareck/vpn-configs-for-russia/blob/main/Vless-Reality-White-Lists-Rus-Mobile.txt",
+    "https://github.com/igareck/vpn-configs-for-russia/blob/main/WHITE-CIDR-RU-all.txt",
+    "https://github.com/igareck/vpn-configs-for-russia/blob/main/WHITE-CIDR-RU-checked.txt",
+    "https://github.com/igareck/vpn-configs-for-russia/blob/main/WHITE-SNI-RU-all.txt",
     "https://raw.githubusercontent.com/zieng2/wl/main/vless.txt",
     "https://raw.githubusercontent.com/LowiKLive/BypassWhitelistRu/refs/heads/main/WhiteList-Bypass_Ru.txt",
     "https://raw.githubusercontent.com/zieng2/wl/main/vless_universal.txt",
@@ -89,6 +97,10 @@ def fetch_keys(urls, tag):
     print(f"Загрузка {tag}...")
     for url in urls:
         try:
+            # Превращаем github blob ссылки в raw, если они случайно попали в таком виде
+            if "github.com" in url and "/blob/" in url:
+                url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
+            
             r = requests.get(url, timeout=10)
             if r.status_code != 200: continue
             content = r.text.strip()
@@ -262,6 +274,8 @@ if __name__ == "__main__":
         f.write("\n".join(subs_lines))
 
     print("=== SUCCESS: LISTS GENERATED ===")
+
+
 
 
 
