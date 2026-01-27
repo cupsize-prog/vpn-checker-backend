@@ -1,6 +1,5 @@
 import os
 import re
-import html
 import socket
 import ssl
 import time
@@ -33,7 +32,6 @@ MAX_KEYS_TO_CHECK = 15000
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
 MY_CHANNEL = "@vlesstrojan" 
 
-# Обновленный список URL без дублей
 URLS_RU = [
     "https://github.com/igareck/vpn-configs-for-russia/blob/main/BLACK_VLESS_RUS_mobile.txt",
     "https://github.com/igareck/vpn-configs-for-russia/blob/main/BLACK_SS%2BAll_RUS.txt",
@@ -51,7 +49,6 @@ URLS_RU = [
     "https://s3c3.001.gpucloud.ru/vahe4xkwi/cjdr"
 ]
 
-# Ссылка на твою папку NEW
 URLS_MY = [
     "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/refs/heads/main/githubmirror/new/all_new.txt"
 ]
@@ -59,16 +56,20 @@ URLS_MY = [
 EURO_CODES = {"NL", "DE", "FI", "GB", "FR", "SE", "PL", "CZ", "AT", "CH", "IT", "ES", "NO", "DK", "BE", "IE", "LU", "EE", "LV", "LT"}
 BAD_MARKERS = ["CN", "IR", "KR", "BR", "IN", "RELAY", "POOL", "🇨🇳", "🇮🇷", "🇰🇷"] 
 
+# ------------------ Функции ------------------
+
 def load_json(path):
     if os.path.exists(path):
         try:
-            with open(path, "r", encoding="utf-8") as f: return json.load(f)
+            with open(path, "r", encoding="utf-8") as f: 
+                return json.load(f)
         except: pass
     return {}
 
 def save_json(path, data):
     try:
-        with open(path, "w", encoding="utf-8") as f: json.dump(data, f, ensure_ascii=False, indent=2)
+        with open(path, "w", encoding="utf-8") as f: 
+            json.dump(data, f, ensure_ascii=False, indent=2)
     except: pass
 
 def get_country_fast(host, key_name):
@@ -97,24 +98,27 @@ def fetch_keys(urls, tag):
     print(f"Загрузка {tag}...")
     for url in urls:
         try:
-            # Превращаем github blob ссылки в raw, если они случайно попали в таком виде
             if "github.com" in url and "/blob/" in url:
                 url = url.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/")
             
             r = requests.get(url, timeout=10)
             if r.status_code != 200: continue
             content = r.text.strip()
+            
             if "://" not in content:
-                try: lines = base64.b64decode(content + "==").decode('utf-8', errors='ignore').splitlines()
-                except: lines = content.splitlines()
-            else: lines = content.splitlines()
+                try: 
+                    lines = base64.b64decode(content + "==").decode('utf-8', errors='ignore').splitlines()
+                except: 
+                    lines = content.splitlines()
+            else: 
+                lines = content.splitlines()
             
             for l in lines:
                 l = l.strip()
                 if len(l) > 2000: continue 
                 if l.startswith(("vless://", "vmess://", "trojan://", "ss://")):
-                    if tag == "MY":
-                        if is_garbage_text(l): continue
+                    if tag == "MY" and is_garbage_text(l): 
+                        continue
                     out.append((l, tag))
         except: pass
     return out
@@ -125,13 +129,13 @@ def check_single_key(data):
         if "@" in key and ":" in key:
             part = key.split("@")[1].split("?")[0].split("#")[0]
             host, port = part.split(":")[0], int(part.split(":")[1])
-        else: return None, None, None
+        else: 
+            return None, None, None
 
         country = get_country_fast(host, key)
         
-        # Разрешаем ВСЁ для MY (кроме России)
-        if tag == "MY":
-            if country == "RU": return None, None, None
+        if tag == "MY" and country == "RU": 
+            return None, None, None
 
         is_tls = 'security=tls' in key or 'security=reality' in key or 'trojan://' in key or 'vmess://' in key
         is_ws = 'type=ws' in key or 'net=ws' in key
@@ -144,7 +148,12 @@ def check_single_key(data):
         if is_ws:
             protocol = "wss" if is_tls else "ws"
             ws_url = f"{protocol}://{host}:{port}{path}"
-            ws = websocket.create_connection(ws_url, timeout=TIMEOUT, sslopt={"cert_reqs": ssl.CERT_NONE}, sockopt=((socket.SOL_SOCKET, socket.SO_RCVTIMEO, TIMEOUT),))
+            ws = websocket.create_connection(
+                ws_url, 
+                timeout=TIMEOUT, 
+                sslopt={"cert_reqs": ssl.CERT_NONE}, 
+                sockopt=((socket.SOL_SOCKET, socket.SO_RCVTIMEO, TIMEOUT),)
+            )
             ws.close()
         elif is_tls:
             context = ssl.create_default_context()
@@ -157,39 +166,50 @@ def check_single_key(data):
             
         latency = int((time.time() - start) * 1000)
         return latency, tag, country
-    except: return None, None, None
+    except: 
+        return None, None, None
+
+def make_final_key(k_id, latency, country):
+    """Создает ключ с правильно закодированной меткой для Hiddify"""
+    # Формат: [123ms NL @channel]
+    info_str = f"[{latency}ms {country} {MY_CHANNEL}]"
+    # Кодируем пробелы и спецсимволы
+    label_encoded = quote(info_str, safe='')
+    return f"{k_id}#{label_encoded}"
 
 def extract_ping(key_str):
+    """Извлекает пинг из метки ключа (работает с закодированными строками)"""
     try:
-        label = key_str.split("#")[-1]
-        if "ms_" not in label: return None
-        ping_part = label.split("ms_")[0]
-        return int(ping_part)
-    except: return None
+        decoded = unquote(key_str)
+        label = decoded.split("#")[-1]
+        match = re.search(r'(\d+)ms', label)
+        if match:
+            return int(match.group(1))
+        return None
+    except: 
+        return None
 
-# === ИСПРАВЛЕННАЯ ФУНКЦИЯ: ТЕКСТ ВМЕСТО BASE64 ===
 def save_chunked(keys_list, folder, base_name):
+    """Сохраняет ключи в файлы, разбивая на части по CHUNK_LIMIT"""
     created_files = []
-    
-    # 1. Убираем пустые
     valid_keys = [k.strip() for k in keys_list if k and k.strip()]
 
-    # 2. Если ключей нет - пустой файл
     if not valid_keys:
         fname = f"{base_name}.txt"
         path = os.path.join(folder, fname)
-        with open(path, "w", encoding="utf-8") as f: f.write("")
+        with open(path, "w", encoding="utf-8") as f: 
+            f.write("")
         created_files.append(fname)
         return created_files
 
-    # 3. Разбиваем на части
     chunks = [valid_keys[i:i + CHUNK_LIMIT] for i in range(0, len(valid_keys), CHUNK_LIMIT)]
     
     for i, chunk in enumerate(chunks, 1):
-        if len(chunks) == 1: fname = f"{base_name}.txt"
-        else: fname = f"{base_name}_part{i}.txt"
+        if len(chunks) == 1: 
+            fname = f"{base_name}.txt"
+        else: 
+            fname = f"{base_name}_part{i}.txt"
             
-        # 4. ПИШЕМ ОБЫЧНЫЙ ТЕКСТ (СПИСОК)
         content = "\n".join(chunk)
         
         with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
@@ -199,14 +219,18 @@ def save_chunked(keys_list, folder, base_name):
         
     return created_files
 
+# ------------------ MAIN ------------------
+
 if __name__ == "__main__":
-    print(f"=== CHECKER v10.0 (TEXT FILES FIXED) ===")
+    print("=== CHECKER v10.1 (HIDDIFY COMPATIBLE) ===")
     
     history = load_json(HISTORY_FILE)
     tasks = fetch_keys(URLS_RU, "RU") + fetch_keys(URLS_MY, "MY")
     
-    unique_tasks = {k: tag for k, tag in tasks}.items()
-    all_items = list(unique_tasks)
+    # Убираем дубли (оставляем последний tag для каждого ключа)
+    unique_tasks = {k: tag for k, tag in tasks}
+    all_items = list(unique_tasks.items())
+    
     if len(all_items) > MAX_KEYS_TO_CHECK:
         all_items = all_items[:MAX_KEYS_TO_CHECK]
     
@@ -215,65 +239,103 @@ if __name__ == "__main__":
     res_ru = []
     res_euro = []
     
+    print(f"Всего уникальных ключей: {len(all_items)}")
+
+    # 1. Обработка кэша
     for k, tag in all_items:
         k_id = k.split("#")[0]
         cached = history.get(k_id)
+        
         if cached and (current_time - cached['time'] < CACHE_HOURS * 3600) and cached['alive']:
             latency = cached['latency']
             country = cached.get('country', 'UNKNOWN')
-            label = f"{latency}ms_{country}_{MY_CHANNEL}"
-            final = f"{k_id}#{label}"
+            final = make_final_key(k_id, latency, country)
             
-            if tag == "RU": res_ru.append(final)
-            elif tag == "MY":
-                if country != "RU": res_euro.append(final)
+            if tag == "RU": 
+                res_ru.append(final)
+            elif tag == "MY" and country != "RU": 
+                res_euro.append(final)
         else:
             to_check.append((k, tag))
 
+    print(f"Из кэша: RU={len(res_ru)}, EURO={len(res_euro)}")
+    print(f"На проверку: {len(to_check)}")
+
+    # 2. Проверка новых ключей
     if to_check:
+        checked_count = 0
         with ThreadPoolExecutor(max_workers=THREADS) as executor:
             future_to_item = {executor.submit(check_single_key, item): item for item in to_check}
-            for i, future in enumerate(future_to_item):
+            
+            for future in future_to_item:
                 key, tag = future_to_item[future]
                 res = future.result()
-                if not res or res[0] is None: continue
-                latency, tag, country = res
-                k_id = key.split("#")[0]
-                history[k_id] = {'alive': True, 'latency': latency, 'time': current_time, 'country': country}
-                label = f"{latency}ms_{country}_{MY_CHANNEL}"
-                final = f"{k_id}#{label}"
                 
-                if tag == "RU": res_ru.append(final)
-                elif tag == "MY":
-                    if country != "RU": res_euro.append(final)
+                if not res or res[0] is None: 
+                    continue
+                
+                latency, _, country = res
+                k_id = key.split("#")[0]
+                
+                # Сохраняем в историю
+                history[k_id] = {
+                    'alive': True, 
+                    'latency': latency, 
+                    'time': current_time, 
+                    'country': country
+                }
+                
+                final = make_final_key(k_id, latency, country)
+                
+                if tag == "RU": 
+                    res_ru.append(final)
+                elif tag == "MY" and country != "RU": 
+                    res_euro.append(final)
+                
+                checked_count += 1
+        
+        print(f"Проверено успешно: {checked_count}")
 
-    save_json(HISTORY_FILE, {k:v for k,v in history.items() if current_time - v['time'] < 259200})
+    # 3. Очистка старой истории (старше 3 дней)
+    save_json(HISTORY_FILE, {
+        k: v for k, v in history.items() 
+        if current_time - v['time'] < 259200
+    })
     
+    # 4. Фильтрация и сортировка по пингу
     res_ru_clean = [k for k in res_ru if extract_ping(k) is not None]
     res_euro_clean = [k for k in res_euro if extract_ping(k) is not None]
+    
     res_ru_clean.sort(key=extract_ping)
     res_euro_clean.sort(key=extract_ping)
+    
+    print(f"После фильтрации: RU={len(res_ru_clean)}, EURO={len(res_euro_clean)}")
 
+    # 5. Сохранение файлов
     ru_files = save_chunked(res_ru_clean, FOLDER_RU, "ru_white")
     euro_files = save_chunked(res_euro_clean, FOLDER_EURO, "my_euro")
 
+    # 6. Генерация списка подписок
     GITHUB_USER_REPO = "kort0881/vpn-checker-backend"
     BRANCH = "main"
     BASE_URL_RU = f"https://raw.githubusercontent.com/{GITHUB_USER_REPO}/{BRANCH}/{BASE_DIR}/RU_Best"
     BASE_URL_EURO = f"https://raw.githubusercontent.com/{GITHUB_USER_REPO}/{BRANCH}/{BASE_DIR}/My_Euro"
     
-    subs_lines = ["=== 🇷🇺 RUSSIA (BASE64) ==="]
+    subs_lines = ["=== 🇷🇺 RUSSIA ==="]
     for f in ru_files:
-        subs_lines.append(f"{BASE_URL_RU}/{f} | Russia Best")
+        subs_lines.append(f"{BASE_URL_RU}/{f}")
         
-    subs_lines.append("\n=== 🇪🇺 EUROPE (BASE64) ===")
+    subs_lines.append("\n=== 🇪🇺 EUROPE ===")
     for f in euro_files:
-        subs_lines.append(f"{BASE_URL_EURO}/{f} | Europe Best")
+        subs_lines.append(f"{BASE_URL_EURO}/{f}")
 
     with open(os.path.join(BASE_DIR, "subscriptions_list.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(subs_lines))
 
     print("=== SUCCESS: LISTS GENERATED ===")
+    print(f"RU файлы: {ru_files}")
+    print(f"EURO файлы: {euro_files}")
+
 
 
 
