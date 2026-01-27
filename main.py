@@ -30,7 +30,7 @@ CHUNK_LIMIT = 1000
 MAX_KEYS_TO_CHECK = 15000 
 
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
-MY_CHANNEL = "@vlesstrojan" 
+MY_CHANNEL = https://t.me/+BuouZpUU1pFjNjMy
 
 URLS_RU = [
     "https://github.com/igareck/vpn-configs-for-russia/blob/main/BLACK_VLESS_RUS_mobile.txt",
@@ -47,6 +47,9 @@ URLS_RU = [
     "https://jsnegsukavsos.hb.ru-msk.vkcloud-storage.ru/love",
     "https://etoneya.a9fm.site/1",
     "https://s3c3.001.gpucloud.ru/vahe4xkwi/cjdr"
+    https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/main/githubmirror/1.txt
+    https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/main/githubmirror/6.txt
+    https://raw.githubusercontent.com/AvenCores/goida-vpn-configs/main/githubmirror/26.txt
 ]
 
 URLS_MY = [
@@ -316,7 +319,7 @@ if __name__ == "__main__":
     euro_files = save_chunked(res_euro_clean, FOLDER_EURO, "my_euro")
 
     # 6. Генерация списка подписок
-    GITHUB_USER_REPO = "kort0881/vpn-checker-backend"
+    GITHUB_USER_REPO = "cupsize-prog"
     BRANCH = "main"
     BASE_URL_RU = f"https://raw.githubusercontent.com/{GITHUB_USER_REPO}/{BRANCH}/{BASE_DIR}/RU_Best"
     BASE_URL_EURO = f"https://raw.githubusercontent.com/{GITHUB_USER_REPO}/{BRANCH}/{BASE_DIR}/My_Euro"
@@ -335,6 +338,7 @@ if __name__ == "__main__":
     print("=== SUCCESS: LISTS GENERATED ===")
     print(f"RU файлы: {ru_files}")
     print(f"EURO файлы: {euro_files}")
+
 
 
 
